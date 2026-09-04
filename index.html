@@ -957,7 +957,7 @@
         return () => clearInterval(interval);
       }, []);
 
-      // Deep link verification token handler (Approver & IT Email Actions)
+      // Deep link verification token handler
       useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const action = urlParams.get("action");
@@ -2211,7 +2211,7 @@
                         if (isAdminAuthenticated) setCurrentView("admin");
                         else setShowLoginModal(true);
                       }}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 border border-slate-200 dark:border-slate-700 transition"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 border border-slate-200 dark:border-slate-700 transition cursor-pointer"
                     >
                       <Icon name="lock" className="w-3.5 h-3.5 text-slate-500" />
                       <span>Admin Portal</span>
@@ -3409,7 +3409,7 @@
                                             onClick={() => handleOpenBlindEvaluationModal(s)}
                                             className="px-2.5 py-1 rounded-lg bg-brand-50 hover:bg-brand-100 dark:bg-brand-950 dark:hover:bg-brand-900 text-brand-700 dark:text-brand-300 font-bold text-[11px] flex items-center gap-1 transition"
                                           >
-                                            <Icon name="clipboardCheck" className="w-3.5 h-3.5 text-brand-600" />
+                                            <Icon name="clipboardCheck" className="w-3 h-3 text-brand-600" />
                                             <span>+ ประเมินเพิ่ม</span>
                                           </button>
 
@@ -3686,6 +3686,233 @@
               </div>
             )}
           </main>
+
+          {/* Admin Login Modal */}
+          {showLoginModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+              <div className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 text-center">
+                <Icon name="lock" className="w-8 h-8 text-brand-600 mx-auto mb-2" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Admin Authentication</h3>
+                <p className="text-xs text-slate-500 mt-1 mb-4">ระบุรหัสผ่านเพื่อเข้าสู่ Admin Portal (admin123)</p>
+
+                <form onSubmit={handleAdminLoginSubmit} className="space-y-4">
+                  <input
+                    type="password"
+                    autoFocus
+                    placeholder="admin123"
+                    value={adminPasscode}
+                    onChange={(e) => setAdminPasscode(e.target.value)}
+                    className="w-full p-2.5 text-sm text-center rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                  />
+                  {loginError && <p className="text-xs text-rose-500">{loginError}</p>}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setShowLoginModal(false)} className="w-1/2 py-2 rounded-xl text-xs bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      Cancel
+                    </button>
+                    <button type="submit" className="w-1/2 py-2 rounded-xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-700">
+                      Login
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Manpower Request Form Modal */}
+          {showRequestModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-fadeIn">
+              <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-[92vh] flex flex-col">
+                <div className="px-6 py-5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <h3 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Icon name="plus" className="w-5 h-5 text-brand-600" />
+                    แบบฟอร์มขอกำลังคน (Manpower Requisition)
+                  </h3>
+                  <button onClick={() => setShowRequestModal(false)} className="p-2 text-slate-400 hover:text-slate-600">
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleFormSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+                    <h4 className="font-bold text-slate-900 dark:text-white text-xs">1. ผู้ยื่นคำขอ (Requester Details)</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">ผู้ขอ (Requester Name) *</label>
+                        <SearchableSelect
+                          value={formInput.requesterName}
+                          options={personnelList.map(p => ({ value: p.name, label: p.name }))}
+                          onChange={(name) => {
+                            const person = personnelList.find(p => p.name === name);
+                            setFormInput(prev => ({
+                              ...prev,
+                              requesterName: name,
+                              requesterEmail: person?.email || prev.requesterEmail,
+                              requesterPosition: person?.position || prev.requesterPosition,
+                              department: person?.department || prev.department
+                            }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">ตำแหน่งผู้ขอ *</label>
+                        <input
+                          type="text"
+                          required
+                          value={formInput.requesterPosition}
+                          onChange={(e) => setFormInput({ ...formInput, requesterPosition: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">Email ผู้ขอ *</label>
+                        <input
+                          type="email"
+                          required
+                          value={formInput.requesterEmail}
+                          onChange={(e) => setFormInput({ ...formInput, requesterEmail: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">ฝ่ายงาน *</label>
+                        <SearchableSelect
+                          value={formInput.department}
+                          options={departmentOptions.map(d => ({ value: d, label: d }))}
+                          onChange={(dept) => setFormInput({ ...formInput, department: dept })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+                    <h4 className="font-bold text-slate-900 dark:text-white text-xs">2. ผู้อนุมัติ &amp; การส่งต่อ (Approval &amp; Routing)</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">ผู้อนุมัติ (Approver Name) *</label>
+                        <SearchableSelect
+                          value={formInput.approverName}
+                          options={personnelList.map(p => ({ value: p.name, label: p.name }))}
+                          onChange={(name) => {
+                            const person = personnelList.find(p => p.name === name);
+                            setFormInput(prev => ({
+                              ...prev,
+                              approverName: name,
+                              approverEmail: person?.email || prev.approverEmail
+                            }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">Email ผู้อนุมัติ *</label>
+                        <input
+                          type="email"
+                          required
+                          value={formInput.approverEmail}
+                          onChange={(e) => setFormInput({ ...formInput, approverEmail: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+                    <h4 className="font-bold text-slate-900 dark:text-white text-xs">3. ตำแหน่งที่ต้องการรับ (Position Requisition)</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-semibold mb-1">ชื่อตำแหน่ง (Job Title) *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Senior Full-Stack AI Engineer"
+                          value={formInput.jobTitle}
+                          onChange={(e) => setFormInput({ ...formInput, jobTitle: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">จำนวนอัตรา (Headcount) *</label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          value={formInput.headcountRequired}
+                          onChange={(e) => setFormInput({ ...formInput, headcountRequired: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-center"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">ประเภทตำแหน่ง (Position Type) *</label>
+                        <select
+                          value={formInput.positionType}
+                          onChange={(e) => setFormInput({ ...formInput, positionType: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold"
+                        >
+                          <option value="Replacement">ทดแทนตำแหน่งเดิม (Replacement)</option>
+                          <option value="New Headcount">เปิดตำแหน่งใหม่ (New Headcount)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">ต้องการภายในวันที่ *</label>
+                        <input
+                          type="date"
+                          required
+                          value={formInput.targetDate}
+                          onChange={(e) => setFormInput({ ...formInput, targetDate: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">Buddy (พี่เลี้ยง)</label>
+                        <SearchableSelect
+                          value={formInput.buddy}
+                          options={personnelList.map(p => ({ value: p.name, label: p.name }))}
+                          onChange={(buddyName) => setFormInput({ ...formInput, buddy: buddyName })}
+                        />
+                      </div>
+                    </div>
+
+                    {formInput.positionType === "Replacement" && (
+                      <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 animate-fadeIn">
+                        <label className="block text-[11px] font-bold text-amber-900 dark:text-amber-200 mb-1">
+                          ชื่อพนักงานที่ลาออก / ถูกทดแทน <span className="text-rose-600">* (บังคับกรอก)</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="ระบุชื่อ-นามสกุล ของพนักงานที่ลาออก"
+                          value={formInput.replacedEmployeeName}
+                          onChange={(e) => setFormInput({ ...formInput, replacedEmployeeName: e.target.value })}
+                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 font-semibold"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowRequestModal(false)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2 rounded-xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 shadow-md"
+                    >
+                      บันทึกคำขอ
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* Toast Notification */}
           {toastMessage && (
