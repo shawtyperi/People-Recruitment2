@@ -624,23 +624,40 @@
     // updates the request directly against the Apps Script backend so it works from
     // ANY device/browser, not just the one the admin created the request on.
     // ==========================================================================
-    function ApprovalGateway({ reqId, role }) {
+    function ApprovalGateway({ reqId, role, scriptUrlFromLink }) {
       const [status, setStatus] = React.useState("loading"); // loading | ready | notfound | error | done | rejected
       const [reqData, setReqData] = React.useState(null);
       const [submitting, setSubmitting] = React.useState(false);
       const [rejectMode, setRejectMode] = React.useState(false);
       const [rejectionReason, setRejectionReason] = React.useState("");
-      const scriptUrl = localStorage.getItem("hr_apps_script_url_v62") || DEFAULT_APPS_SCRIPT_WEBAPP_URL;
+      const [errorDetail, setErrorDetail] = React.useState("");
+      // ลำดับความสำคัญ: scriptUrl ที่แนบมากับลิงก์ในอีเมล (แม่นยำที่สุด เพราะเป็น URL ของ
+      // deployment จริงตอนที่ส่งอีเมล) > ค่าที่เคยตั้งไว้ใน localStorage เครื่องนี้ > ค่า default ในโค้ด
+      const scriptUrl = scriptUrlFromLink || localStorage.getItem("hr_apps_script_url_v62") || DEFAULT_APPS_SCRIPT_WEBAPP_URL;
       React.useEffect(() => {
         const darkMode = localStorage.getItem("theme_mode") === "dark" ||
           (!('theme_mode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
         if (darkMode) document.documentElement.classList.add('dark');
       }, []);
       React.useEffect(() => {
-        if (!reqId || !scriptUrl) { setStatus("error"); return; }
+        if (!reqId || !scriptUrl) {
+          setErrorDetail("ไม่พบ reqId หรือ URL ของ Apps Script ในลิงก์");
+          setStatus("error");
+          return;
+        }
         fetch(`${scriptUrl}?action=getRequest&reqId=${encodeURIComponent(reqId)}`)
-          .then(res => res.json())
-          .then(json => {
+          .then(res => res.text().then(text => ({ ok: res.ok, text: text })))
+          .then(({ ok, text }) => {
+            let json;
+            try {
+              json = JSON.parse(text);
+            } catch (parseErr) {
+              // ตอบกลับมาไม่ใช่ JSON -> ส่วนใหญ่มาจาก Code.gs ที่ deploy อยู่ยังเป็นเวอร์ชันเก่า
+              // (ยังไม่มี action "getRequest") กรุณา Deploy > Manage deployments > New version
+              setErrorDetail("เซิร์ฟเวอร์ไม่ได้ตอบกลับเป็น JSON (Apps Script อาจยังไม่ได้ deploy เวอร์ชันล่าสุด): " + text.substring(0, 150));
+              setStatus("error");
+              return;
+            }
             if (json && json.status === "success" && json.request) {
               setReqData(json.request);
               setStatus("ready");
@@ -648,7 +665,10 @@
               setStatus("notfound");
             }
           })
-          .catch(() => setStatus("error"));
+          .catch((err) => {
+            setErrorDetail("เชื่อมต่อ Apps Script ไม่สำเร็จ: " + (err && err.message ? err.message : String(err)));
+            setStatus("error");
+          });
       }, [reqId, scriptUrl]);
       const expectedStatus = role === "approver" ? "PENDING_APPROVER" : "PENDING_IT";
       const currentStatus = reqData ? (reqData.requestStatus || reqData.workflowStatus) : null;
@@ -708,6 +728,11 @@
               <div className="text-4xl">❌</div>
               <h2 className="text-base font-extrabold text-slate-900 dark:text-white">เกิดข้อผิดพลาดในการโหลดข้อมูล</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">กรุณาลองกดลิงก์ในอีเมลอีกครั้ง หรือติดต่อฝ่าย HR</p>
+              {errorDetail && (
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 break-words bg-slate-50 dark:bg-slate-800/60 rounded-lg p-2 mt-2">
+                  {errorDetail}
+                </p>
+              )}
             </div>
           )}
           {status === "done" && (
@@ -734,7 +759,7 @@
             <div className={`relative w-full ${role === "approver" ? "max-w-xl" : "max-w-lg"} bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border ${role === "approver" ? "border-sky-300 dark:border-sky-800" : "border-purple-300 dark:border-purple-800"} overflow-hidden max-h-[92vh] flex flex-col`}>
               <div className={`px-6 py-4 bg-gradient-to-r ${role === "approver" ? "from-sky-700 to-brand-600" : "from-purple-700 to-brand-600"} text-white`}>
                 <span className={`text-[10px] font-extrabold uppercase tracking-wider ${role === "approver" ? "text-sky-200" : "text-purple-200"}`}>
-                  {role === "approver" ? "REQUISITION INSPECTION & APPROVAL ACTION" : "IT PREPARATION CONFIRMATION"}
+                  REQUISITION INSPECTION &amp; APPROVAL ACTION
                 </span>
                 <h3 className="text-base sm:text-lg font-extrabold mt-0.5">
                   {reqData.jobTitle} ({reqData.id || reqId})
@@ -771,14 +796,16 @@
                   </React.Fragment>
                 ) : (
                   <React.Fragment>
+                    {/* IT เห็นเฉพาะ ตำแหน่ง / จำนวน / ของที่ต้องเตรียม / วันที่ต้องเตรียมเสร็จ
+                        เท่านั้น — ห้ามเห็นรายละเอียดอื่น (ผู้ขอ, แผนก, JD, คุณสมบัติ ฯลฯ) ซึ่งเป็นข้อมูล
+                        เฉพาะ Admin/ผู้อนุมัติเท่านั้น */}
                     <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
                       <div><span className="text-slate-400">ตำแหน่ง:</span> <strong className="text-slate-900 dark:text-white">{reqData.jobTitle}</strong></div>
                       <div><span className="text-slate-400">จำนวน:</span> <strong className="text-slate-900 dark:text-white">{reqData.headcountRequired || 1} อัตรา</strong></div>
-                      <div><span className="text-slate-400">แผนก:</span> <strong className="text-slate-900 dark:text-white">{reqData.department}</strong></div>
-                      <div><span className="text-slate-400">วันที่ต้องเตรียมเสร็จ:</span> <strong className="text-amber-600">{reqData.targetDate || "-"}</strong></div>
+                      <div className="col-span-2"><span className="text-slate-400">วันที่ต้องเตรียมเสร็จ:</span> <strong className="text-amber-600">{reqData.targetDate || "-"}</strong></div>
                     </div>
                     <div>
-                      <span className="text-slate-400 font-bold text-[11px] uppercase">อุปกรณ์/สิ่งที่ต้องเตรียม</span>
+                      <span className="text-slate-400 font-bold text-[11px] uppercase">ของที่ต้องเตรียม</span>
                       <div className="grid grid-cols-2 gap-2 mt-2">
                         {[
                           { label: "Laptop / PC", val: reqData.itLaptop || "ต้องการ" },
@@ -5985,7 +6012,7 @@
                 <div className="px-6 py-4 bg-gradient-to-r from-purple-700 to-brand-600 text-white flex items-center justify-between">
                   <div>
                     <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-200">
-                      IT PREPARATION CONFIRMATION
+                      REQUISITION INSPECTION &amp; APPROVAL ACTION
                     </span>
                     <h3 className="text-base sm:text-lg font-extrabold mt-0.5">
                       {itActionModal.jobTitle} ({itActionModal.id})
@@ -6004,11 +6031,11 @@
                       ⚠️ คำขอนี้ถูกดำเนินการไปแล้ว (สถานะปัจจุบัน: {itActionModal.requestStatus || itActionModal.workflowStatus})
                     </div>
                   )}
+                  {/* IT เห็นเฉพาะ ตำแหน่ง / จำนวน / วันที่ต้องเตรียมเสร็จ / ของที่ต้องเตรียม เท่านั้น */}
                   <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
                     <div><span className="text-slate-400">ตำแหน่ง:</span> <strong className="text-slate-900 dark:text-white">{itActionModal.jobTitle}</strong></div>
                     <div><span className="text-slate-400">จำนวน:</span> <strong className="text-slate-900 dark:text-white">{itActionModal.headcountRequired || 1} อัตรา</strong></div>
-                    <div><span className="text-slate-400">แผนก:</span> <strong className="text-slate-900 dark:text-white">{itActionModal.department}</strong></div>
-                    <div><span className="text-slate-400">วันที่ต้องเตรียมเสร็จ:</span> <strong className="text-amber-600">{itActionModal.targetDate || "-"}</strong></div>
+                    <div className="col-span-2"><span className="text-slate-400">วันที่ต้องเตรียมเสร็จ:</span> <strong className="text-amber-600">{itActionModal.targetDate || "-"}</strong></div>
                   </div>
                   <div>
                     <span className="text-slate-400 font-bold text-[11px] uppercase">อุปกรณ์/สิ่งที่ต้องเตรียม</span>
@@ -6698,8 +6725,9 @@
     const __bootParams = new URLSearchParams(window.location.search);
     const __viewReqId = __bootParams.get("viewReqId");
     const __role = __bootParams.get("role");
+    const __scriptUrl = __bootParams.get("scriptUrl");
     if (__viewReqId && (__role === "approver" || __role === "it")) {
-      root.render(<ApprovalGateway reqId={__viewReqId} role={__role} />);
+      root.render(<ApprovalGateway reqId={__viewReqId} role={__role} scriptUrlFromLink={__scriptUrl} />);
     } else {
       root.render(<App />);
     }
