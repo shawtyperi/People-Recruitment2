@@ -2004,28 +2004,6 @@
         setShowRequestModal(false);
         setPendingConfirmationForm(null);
         setFormInput(initialForm);
-
-        // ซิงค์คำขอใหม่ไปยัง Google Sheet แท็บ Requisitions ทันที
-        if (googleScriptUrl) {
-          fetch(googleScriptUrl, {
-            method: "POST",
-            mode: "no-cors",
-            headers: { "Content-Type": "text/plain" },
-            body: JSON.stringify({
-              action: "createRequisition",
-              reqId: newId,
-              requestDate: dateStr,
-              jobTitle: newReq.jobTitle,
-              department: newReq.department,
-              headcount: headcount,
-              positionType: newReq.positionType,
-              requesterName: newReq.requesterName,
-              approverEmail: newReq.approverEmail,
-              itEquipment: `Laptop: ${newReq.itLaptop}, Sim: ${newReq.itSimCard}, Email: ${newReq.itEmail}, Netsuite: ${newReq.itNetsuite}`
-            })
-          }).catch(() => {});
-        }
-
         triggerToast("🎉 ส่งคำขอกำลังคนสำเร็จ! สถานะ: ⏳ รอแอดมินตรวจสอบ (PENDING_ADMIN)");
       };
 
