@@ -616,6 +616,253 @@
         ]
       }
     ];
+    // ==========================================================================
+    // STANDALONE SCOPED APPROVAL GATEWAY
+    // Rendered INSTEAD of <App /> when the URL carries ?viewReqId=...&role=approver|it
+    // (opened from the email deep-link). Shows ONLY the single-requisition action
+    // panel — no header, no login, no Kanban, no other admin UI — and fetches /
+    // updates the request directly against the Apps Script backend so it works from
+    // ANY device/browser, not just the one the admin created the request on.
+    // ==========================================================================
+    function ApprovalGateway({ reqId, role }) {
+      const [status, setStatus] = React.useState("loading"); // loading | ready | notfound | error | done | rejected
+      const [reqData, setReqData] = React.useState(null);
+      const [submitting, setSubmitting] = React.useState(false);
+      const [rejectMode, setRejectMode] = React.useState(false);
+      const [rejectionReason, setRejectionReason] = React.useState("");
+      const scriptUrl = localStorage.getItem("hr_apps_script_url_v62") || DEFAULT_APPS_SCRIPT_WEBAPP_URL;
+      React.useEffect(() => {
+        const darkMode = localStorage.getItem("theme_mode") === "dark" ||
+          (!('theme_mode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (darkMode) document.documentElement.classList.add('dark');
+      }, []);
+      React.useEffect(() => {
+        if (!reqId || !scriptUrl) { setStatus("error"); return; }
+        fetch(`${scriptUrl}?action=getRequest&reqId=${encodeURIComponent(reqId)}`)
+          .then(res => res.json())
+          .then(json => {
+            if (json && json.status === "success" && json.request) {
+              setReqData(json.request);
+              setStatus("ready");
+            } else {
+              setStatus("notfound");
+            }
+          })
+          .catch(() => setStatus("error"));
+      }, [reqId, scriptUrl]);
+      const expectedStatus = role === "approver" ? "PENDING_APPROVER" : "PENDING_IT";
+      const currentStatus = reqData ? (reqData.requestStatus || reqData.workflowStatus) : null;
+      const handleConfirm = () => {
+        setSubmitting(true);
+        fetch(scriptUrl, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({
+            action: role === "approver" ? "approverAction" : "itAction",
+            reqId: reqId,
+            decision: "approve"
+          })
+        }).catch(() => {}).finally(() => {
+          setSubmitting(false);
+          setStatus("done");
+        });
+      };
+      const handleReject = () => {
+        if (!rejectionReason.trim()) return;
+        setSubmitting(true);
+        fetch(scriptUrl, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({
+            action: role === "approver" ? "approverAction" : "itAction",
+            reqId: reqId,
+            decision: "reject",
+            rejectionReason: rejectionReason.trim()
+          })
+        }).catch(() => {}).finally(() => {
+          setSubmitting(false);
+          setStatus("rejected");
+        });
+      };
+      return (
+        <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex items-center justify-center p-4 sm:p-6">
+          {status === "loading" && (
+            <div className="text-center text-slate-500 dark:text-slate-400">
+              <div className="w-10 h-10 mx-auto mb-3 border-4 border-brand-300 border-t-brand-600 rounded-full animate-spin"></div>
+              <p className="text-sm font-semibold">⏳ กำลังโหลดข้อมูลคำขอ {reqId}...</p>
+            </div>
+          )}
+          {status === "notfound" && (
+            <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-amber-200 dark:border-amber-800 p-8 text-center space-y-3">
+              <div className="text-4xl">⚠️</div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white">ไม่พบคำขอ {reqId}</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                คำขอนี้อาจถูกลบ, รหัสไม่ถูกต้อง หรือยังไม่ถูกซิงค์ขึ้นระบบส่วนกลาง กรุณาติดต่อฝ่าย HR
+              </p>
+            </div>
+          )}
+          {status === "error" && (
+            <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-rose-200 dark:border-rose-800 p-8 text-center space-y-3">
+              <div className="text-4xl">❌</div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white">เกิดข้อผิดพลาดในการโหลดข้อมูล</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">กรุณาลองกดลิงก์ในอีเมลอีกครั้ง หรือติดต่อฝ่าย HR</p>
+            </div>
+          )}
+          {status === "done" && (
+            <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-emerald-200 dark:border-emerald-800 p-8 text-center space-y-3">
+              <div className="text-4xl">✅</div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
+                {role === "approver" ? "ยืนยันอนุมัติเรียบร้อยแล้ว" : "ยืนยันรับทราบเรียบร้อยแล้ว"}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {role === "approver"
+                  ? `คำขอ ${reqId} ถูกส่งต่อไปยังทีม IT (สถานะ: รอ IT ยืนยัน) เรียบร้อยแล้ว คุณสามารถปิดหน้านี้ได้`
+                  : `คำขอ ${reqId} พร้อมสรรหาแล้ว และถูกย้ายเข้าคอลัมน์ "1. Manpower Request" ในระบบเรียบร้อยแล้ว คุณสามารถปิดหน้านี้ได้`}
+              </p>
+            </div>
+          )}
+          {status === "rejected" && (
+            <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-rose-200 dark:border-rose-800 p-8 text-center space-y-3">
+              <div className="text-4xl">❌</div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white">ตีกลับคำขอเรียบร้อยแล้ว</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">ทีม HR จะได้รับแจ้งเหตุผลการตีกลับของคุณ คุณสามารถปิดหน้านี้ได้</p>
+            </div>
+          )}
+          {status === "ready" && reqData && (
+            <div className={`relative w-full ${role === "approver" ? "max-w-xl" : "max-w-lg"} bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border ${role === "approver" ? "border-sky-300 dark:border-sky-800" : "border-purple-300 dark:border-purple-800"} overflow-hidden max-h-[92vh] flex flex-col`}>
+              <div className={`px-6 py-4 bg-gradient-to-r ${role === "approver" ? "from-sky-700 to-brand-600" : "from-purple-700 to-brand-600"} text-white`}>
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${role === "approver" ? "text-sky-200" : "text-purple-200"}`}>
+                  {role === "approver" ? "REQUISITION INSPECTION & APPROVAL ACTION" : "IT PREPARATION CONFIRMATION"}
+                </span>
+                <h3 className="text-base sm:text-lg font-extrabold mt-0.5">
+                  {reqData.jobTitle} ({reqData.id || reqId})
+                </h3>
+              </div>
+              <div className="p-6 space-y-4 overflow-y-auto text-xs">
+                {currentStatus !== expectedStatus && (
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 font-semibold">
+                    ⚠️ คำขอนี้ถูกดำเนินการไปแล้ว (สถานะปัจจุบัน: {currentStatus})
+                  </div>
+                )}
+                {role === "approver" ? (
+                  <React.Fragment>
+                    <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                      <div><span className="text-slate-400">ผู้ขอ:</span> <strong className="text-slate-900 dark:text-white">{reqData.requesterName}</strong></div>
+                      <div><span className="text-slate-400">แผนก:</span> <strong className="text-slate-900 dark:text-white">{reqData.department}</strong></div>
+                      <div><span className="text-slate-400">จำนวนที่ขอ:</span> <strong className="text-slate-900 dark:text-white">{reqData.headcountRequired || 1} อัตรา</strong></div>
+                      <div><span className="text-slate-400">ประเภท:</span> <strong className="text-slate-900 dark:text-white">{reqData.positionType}</strong></div>
+                      <div><span className="text-slate-400">วันที่ต้องการ:</span> <strong className="text-amber-600">{reqData.targetDate || "-"}</strong></div>
+                      <div><span className="text-slate-400">Buddy:</span> <strong className="text-slate-900 dark:text-white">{reqData.buddy || "-"}</strong></div>
+                    </div>
+                    {reqData.jobDescription && (
+                      <div>
+                        <span className="text-slate-400 font-bold">รายละเอียดงาน:</span>
+                        <p className="mt-1 text-slate-800 dark:text-slate-200 leading-relaxed">{reqData.jobDescription}</p>
+                      </div>
+                    )}
+                    {reqData.mustHaveQualifications && (
+                      <div>
+                        <span className="text-slate-400 font-bold">คุณสมบัติที่ต้องมี:</span>
+                        <p className="mt-1 text-slate-800 dark:text-slate-200 leading-relaxed">{reqData.mustHaveQualifications}</p>
+                      </div>
+                    )}
+                  </React.Fragment>
+                ) : (
+                  <React.Fragment>
+                    <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                      <div><span className="text-slate-400">ตำแหน่ง:</span> <strong className="text-slate-900 dark:text-white">{reqData.jobTitle}</strong></div>
+                      <div><span className="text-slate-400">จำนวน:</span> <strong className="text-slate-900 dark:text-white">{reqData.headcountRequired || 1} อัตรา</strong></div>
+                      <div><span className="text-slate-400">แผนก:</span> <strong className="text-slate-900 dark:text-white">{reqData.department}</strong></div>
+                      <div><span className="text-slate-400">วันที่ต้องเตรียมเสร็จ:</span> <strong className="text-amber-600">{reqData.targetDate || "-"}</strong></div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-bold text-[11px] uppercase">อุปกรณ์/สิ่งที่ต้องเตรียม</span>
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        {[
+                          { label: "Laptop / PC", val: reqData.itLaptop || "ต้องการ" },
+                          { label: "Sim Card", val: reqData.itSimCard || "ไม่ต้องการ" },
+                          { label: "Corporate Email", val: reqData.itEmail || "ต้องการ" },
+                          { label: "ERP Netsuite", val: reqData.itNetsuite || "ไม่ต้องการ" }
+                        ].map((item) => (
+                          <div
+                            key={item.label}
+                            className={`p-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-between ${
+                              item.val === "ต้องการ"
+                                ? "bg-brand-50 dark:bg-brand-950/40 border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300"
+                                : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-400"
+                            }`}
+                          >
+                            <span>{item.label}</span>
+                            <span>{item.val}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </React.Fragment>
+                )}
+                {rejectMode && (
+                  <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                      เหตุผลในการตีกลับ / ปฏิเสธคำขอ <span className="text-rose-600">*</span>
+                    </label>
+                    <textarea
+                      required
+                      rows="3"
+                      placeholder="ระบุเหตุผล..."
+                      value={rejectionReason}
+                      onChange={(e) => setRejectionReason(e.target.value)}
+                      className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-rose-300 dark:border-rose-800 focus:ring-2 focus:ring-rose-500 font-medium"
+                    ></textarea>
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-900">
+                {!rejectMode ? (
+                  <React.Fragment>
+                    <button
+                      type="button"
+                      onClick={() => setRejectMode(true)}
+                      disabled={submitting || currentStatus !== expectedStatus}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 transition active:scale-95 disabled:opacity-50"
+                    >
+                      {role === "approver" ? "❌ ปฏิเสธ/ตีกลับ" : "❌ อุปกรณ์ไม่พร้อม / ตีกลับ"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={submitting || currentStatus !== expectedStatus}
+                      onClick={handleConfirm}
+                      className={`px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r ${role === "approver" ? "from-sky-600 to-brand-600 hover:from-sky-700 hover:to-brand-700" : "from-purple-600 to-brand-600 hover:from-purple-700 hover:to-brand-700"} shadow-md shadow-brand-500/20 transition active:scale-95 disabled:opacity-50`}
+                    >
+                      {submitting ? "⏳ กำลังบันทึก..." : (role === "approver" ? "✅ ยืนยันอนุมัติ & ส่งต่อ IT" : "✅ ยืนยันรับทราบ (พร้อมสรรหา)")}
+                    </button>
+                  </React.Fragment>
+                ) : (
+                  <React.Fragment>
+                    <button
+                      type="button"
+                      onClick={() => { setRejectMode(false); setRejectionReason(""); }}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      type="button"
+                      disabled={submitting || !rejectionReason.trim()}
+                      onClick={handleReject}
+                      className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md disabled:opacity-50"
+                    >
+                      {submitting ? "⏳ กำลังบันทึก..." : "ยืนยันตีกลับคำขอ"}
+                    </button>
+                  </React.Fragment>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
     function App() {
       const [requests, setRequests] = useState(() => {
         const saved = localStorage.getItem("hr_requests_v62");
@@ -1787,6 +2034,16 @@
         setShowRequestModal(false);
         setPendingConfirmationForm(null);
         setFormInput(initialForm);
+        if (googleScriptUrl) {
+          // Sync the brand-new request to the Requests sheet immediately so it exists
+          // server-side even before the admin opens this app on their own browser
+          fetch(googleScriptUrl, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({ action: "syncRequest", request: newReq })
+          }).catch(() => {});
+        }
         triggerToast("🎉 ส่งคำขอกำลังคนสำเร็จ! สถานะ: ⏳ รอแอดมินตรวจสอบ (PENDING_ADMIN)");
       };
       // Admin Review: Transition to PENDING_APPROVER and dispatch notification
@@ -1802,23 +2059,19 @@
           setIsApprovingEmailSending(true);
           triggerToast(`⏳ กำลังส่งอีเมลขออนุมัติไปยัง ${approverEmail}...`);
           // Update state to PENDING_APPROVER
-          setRequests(prev => prev.map(r => {
-            if (r.id === parentReqId) {
-              const updatedSlots = (r.slots || []).map(s => ({
-                ...s,
-                slotStatus: "PENDING_APPROVER",
-                workflowStatus: "PENDING_APPROVER"
-              }));
-              return {
-                ...r,
-                requestStatus: "PENDING_APPROVER",
-                workflowStatus: "PENDING_APPROVER",
-                slots: updatedSlots,
-                lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
-              };
-            }
-            return r;
+          const updatedSlotsForSync = (targetReq.slots || []).map(s => ({
+            ...s,
+            slotStatus: "PENDING_APPROVER",
+            workflowStatus: "PENDING_APPROVER"
           }));
+          const updatedReqForSync = {
+            ...targetReq,
+            requestStatus: "PENDING_APPROVER",
+            workflowStatus: "PENDING_APPROVER",
+            slots: updatedSlotsForSync,
+            lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
+          };
+          setRequests(prev => prev.map(r => (r.id === parentReqId ? updatedReqForSync : r)));
           // Trigger backend service / Apps Script endpoint
           if (googleScriptUrl) {
             await fetch(googleScriptUrl, {
@@ -1844,6 +2097,14 @@
                 }
               })
             });
+            // Sync full request snapshot to the Requests sheet so the scoped
+            // Approver/IT deep-link page (opened on ANY device/browser) can find it
+            fetch(googleScriptUrl, {
+              method: "POST",
+              mode: "no-cors",
+              headers: { "Content-Type": "text/plain" },
+              body: JSON.stringify({ action: "syncRequest", request: updatedReqForSync })
+            }).catch(() => {});
           }
           setShowAdminReviewModal(false);
           setSelectedAdminReviewSlot(null);
@@ -1868,6 +2129,7 @@
           return;
         }
         const reason = rejectionNoteInput.trim();
+        let updatedReqForSync = null;
         setRequests(prev => prev.map(r => {
           if (r.id === reqId) {
             const updatedSlots = (r.slots || []).map(s => ({
@@ -1877,7 +2139,7 @@
               stage: "cancelled",
               rejectionReason: reason
             }));
-            return {
+            updatedReqForSync = {
               ...r,
               requestStatus: "REJECTED_BY_ADMIN",
               workflowStatus: "REJECTED_BY_ADMIN",
@@ -1886,9 +2148,20 @@
               slots: updatedSlots,
               lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
             };
+            return updatedReqForSync;
           }
           return r;
         }));
+        if (googleScriptUrl && updatedReqForSync) {
+          // Sync rejection to the Requests sheet (fire-and-forget) so any open
+          // Approver/IT deep-link page reflects the rejected status too
+          fetch(googleScriptUrl, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({ action: "syncRequest", request: updatedReqForSync })
+          }).catch(() => {});
+        }
         if (selectedRequisitionDetail && selectedRequisitionDetail.id === reqId) {
           setSelectedRequisitionDetail(prev => ({
             ...prev,
@@ -1909,23 +2182,19 @@
         if (!req) return;
         try {
           setIsNotifyingIT(true);
-          setRequests(prev => prev.map(r => {
-            if (r.id === req.id) {
-              const updatedSlots = (r.slots || []).map(s => ({
-                ...s,
-                slotStatus: "PENDING_IT",
-                workflowStatus: "PENDING_IT"
-              }));
-              return {
-                ...r,
-                requestStatus: "PENDING_IT",
-                workflowStatus: "PENDING_IT",
-                slots: updatedSlots,
-                lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
-              };
-            }
-            return r;
+          const updatedSlots = (req.slots || []).map(s => ({
+            ...s,
+            slotStatus: "PENDING_IT",
+            workflowStatus: "PENDING_IT"
           }));
+          const updatedReqForSync = {
+            ...req,
+            requestStatus: "PENDING_IT",
+            workflowStatus: "PENDING_IT",
+            slots: updatedSlots,
+            lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
+          };
+          setRequests(prev => prev.map(r => (r.id === req.id ? updatedReqForSync : r)));
           if (googleScriptUrl) {
             await fetch(googleScriptUrl, {
               method: "POST",
@@ -1946,6 +2215,12 @@
                 }
               })
             });
+            fetch(googleScriptUrl, {
+              method: "POST",
+              mode: "no-cors",
+              headers: { "Content-Type": "text/plain" },
+              body: JSON.stringify({ action: "syncRequest", request: updatedReqForSync })
+            }).catch(() => {});
           }
           triggerToast(`✅ ยืนยันอนุมัติ ${req.id} เรียบร้อย! ส่งอีเมลแจ้งทีม IT ให้จัดเตรียมอุปกรณ์แล้ว (สถานะ: PENDING_IT)`);
         } catch (err) {
@@ -1958,25 +2233,29 @@
       // NEW: IT กด "ยืนยันรับทราบ" ใน scoped modal -> READY_FOR_RECRUITMENT + auto เข้า Kanban "1. Manpower Request"
       const handleITConfirmAndReady = (req) => {
         if (!req) return;
-        setRequests(prev => prev.map(r => {
-          if (r.id === req.id) {
-            const updatedSlots = (r.slots || []).map(s => ({
-              ...s,
-              slotStatus: "READY_FOR_RECRUITMENT",
-              workflowStatus: "READY_FOR_RECRUITMENT",
-              stage: (s.stage === "received" || !s.stage) ? "manpower" : s.stage
-            }));
-            return {
-              ...r,
-              requestStatus: "READY_FOR_RECRUITMENT",
-              workflowStatus: "READY_FOR_RECRUITMENT",
-              stage: (r.stage === "received" || !r.stage) ? "manpower" : r.stage,
-              slots: updatedSlots,
-              lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
-            };
-          }
-          return r;
+        const updatedSlots = (req.slots || []).map(s => ({
+          ...s,
+          slotStatus: "READY_FOR_RECRUITMENT",
+          workflowStatus: "READY_FOR_RECRUITMENT",
+          stage: (s.stage === "received" || !s.stage) ? "manpower" : s.stage
         }));
+        const updatedReqForSync = {
+          ...req,
+          requestStatus: "READY_FOR_RECRUITMENT",
+          workflowStatus: "READY_FOR_RECRUITMENT",
+          stage: (req.stage === "received" || !req.stage) ? "manpower" : req.stage,
+          slots: updatedSlots,
+          lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
+        };
+        setRequests(prev => prev.map(r => (r.id === req.id ? updatedReqForSync : r)));
+        if (googleScriptUrl) {
+          fetch(googleScriptUrl, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({ action: "syncRequest", request: updatedReqForSync })
+          }).catch(() => {});
+        }
         setItActionModal(null);
         triggerToast(`💻 ทีม IT ยืนยันรับทราบอุปกรณ์เรียบร้อย! ย้าย "${req.jobTitle}" (${req.id}) เข้าสู่คอลัมน์ "1. Manpower Request" แล้ว`);
       };
@@ -6414,7 +6693,16 @@
       );
     }
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    // If this page was opened from the email deep-link (?viewReqId=...&role=approver|it),
+    // render ONLY the scoped Approval Gateway — never the full admin app underneath it.
+    const __bootParams = new URLSearchParams(window.location.search);
+    const __viewReqId = __bootParams.get("viewReqId");
+    const __role = __bootParams.get("role");
+    if (__viewReqId && (__role === "approver" || __role === "it")) {
+      root.render(<ApprovalGateway reqId={__viewReqId} role={__role} />);
+    } else {
+      root.render(<App />);
+    }
   </script>
 </body>
 </html>
