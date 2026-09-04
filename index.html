@@ -1000,8 +1000,8 @@
         requesterPosition: "",
         requesterEmail: "",
         department: "-",
-        approverName: "",
-        approverEmail: "",
+        approverName: "ศรัณย์ภัทธ อุบล",
+        approverEmail: "sarunpat.ub@valuesourcing.co",
         forwardTo: "",
         forwardEmail: "",
         jobTitle: "",
@@ -2007,65 +2007,49 @@
         triggerToast("🎉 ส่งคำขอกำลังคนสำเร็จ! สถานะ: ⏳ รอแอดมินตรวจสอบ (PENDING_ADMIN)");
       };
 
-      // Admin Review: Transition to PENDING_APPROVER and dispatch notification
-      const handleAdminApproveAndSendToApprover = async (reqOrSlot) => {
+      // Admin Review: Transition immediately to READY_FOR_RECRUITMENT and move to manpower stage (No email)
+      const handleAdminApproveAndMoveToManpower = async (reqOrSlot) => {
         const parentReqId = reqOrSlot.parentRequestId || reqOrSlot.id;
         const targetReq = requests.find(r => r.id === parentReqId) || reqOrSlot;
-        const approverEmail = targetReq.approverEmail || reqOrSlot.approverEmail;
-
-        if (!approverEmail || !approverEmail.includes("@")) {
-          triggerToast("⚠️ ไม่พบอีเมลผู้อนุมัติที่ถูกต้องในคำขอนี้");
-          return;
-        }
 
         try {
           setIsApprovingEmailSending(true);
-          triggerToast(`⏳ กำลังส่งอีเมลขออนุมัติไปยัง ${approverEmail}...`);
+          triggerToast(`⏳ กำลังอนุมัติคำขอ ${parentReqId} และเริ่มกระบวนการสรรหา...`);
 
-          // Update state to PENDING_APPROVER
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+          // Update state of requests to READY_FOR_RECRUITMENT and stage to manpower
           setRequests(prev => prev.map(r => {
             if (r.id === parentReqId) {
               const updatedSlots = (r.slots || []).map(s => ({
                 ...s,
-                slotStatus: "PENDING_APPROVER",
-                workflowStatus: "PENDING_APPROVER"
+                slotStatus: "READY_FOR_RECRUITMENT",
+                workflowStatus: "READY_FOR_RECRUITMENT",
+                stage: "manpower"
               }));
               return {
                 ...r,
-                requestStatus: "PENDING_APPROVER",
-                workflowStatus: "PENDING_APPROVER",
+                requestStatus: "READY_FOR_RECRUITMENT",
+                workflowStatus: "READY_FOR_RECRUITMENT",
+                stage: "manpower",
                 slots: updatedSlots,
-                lastUpdated: new Date().toISOString().replace('T', ' ').substring(0, 19)
+                lastUpdated: nowStr
               };
             }
             return r;
           }));
 
-          // Trigger backend service / Apps Script endpoint
+          // Background sync to Google Sheet if configured (without sending email)
           if (googleScriptUrl) {
-            await fetch(googleScriptUrl, {
+            fetch(googleScriptUrl, {
               method: "POST",
               mode: "no-cors",
               headers: { "Content-Type": "text/plain" },
               body: JSON.stringify({
-                action: "sendApproverEmail",
-                reqId: parentReqId,
-                jobTitle: targetReq.jobTitle,
-                department: targetReq.department,
-                headcountRequired: targetReq.headcountRequired || 1,
-                positionType: targetReq.positionType,
-                approverName: targetReq.approverName,
-                approverEmail: approverEmail,
-                targetDate: targetReq.targetDate,
-                mustHaveQualifications: targetReq.mustHaveQualifications,
-                itRequirements: targetReq.itRequirements || {
-                  laptop: targetReq.itLaptop || "ต้องการ",
-                  sim: targetReq.itSimCard || "ไม่ต้องการ",
-                  email: targetReq.itEmail || "ต้องการ",
-                  netsuite: targetReq.itNetsuite || "ไม่ต้องการ"
-                }
+                action: "confirmITReady",
+                reqId: parentReqId
               })
-            });
+            }).catch(() => {});
           }
 
           setShowAdminReviewModal(false);
@@ -2073,13 +2057,14 @@
           if (selectedRequisitionDetail && selectedRequisitionDetail.id === parentReqId) {
             setSelectedRequisitionDetail(prev => ({
               ...prev,
-              requestStatus: "PENDING_APPROVER",
-              workflowStatus: "PENDING_APPROVER"
+              requestStatus: "READY_FOR_RECRUITMENT",
+              workflowStatus: "READY_FOR_RECRUITMENT",
+              stage: "manpower"
             }));
           }
-          triggerToast(`📧 ส่งอีเมลไปยังผู้อนุมัติเรียบร้อยแล้ว (สถานะ: PENDING_APPROVER)`);
+          triggerToast(`✅ ยืนยันรับข้อมูลเรียบร้อย! ปรับสถานะเป็น READY_FOR_RECRUITMENT และย้ายคำขอเข้าสู่ 1. Manpower Request บน Kanban ทันที`);
         } catch (err) {
-          triggerToast("บันทึกสถานะเป็น PENDING_APPROVER เรียบร้อยแล้ว");
+          triggerToast("บันทึกสถานะเป็น READY_FOR_RECRUITMENT เรียบร้อยแล้ว");
         } finally {
           setIsApprovingEmailSending(false);
         }
@@ -5413,32 +5398,32 @@
                   </div>
 
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
-                    <h4 className="font-bold text-slate-900 dark:text-white text-xs">2. ผู้อนุมัติ &amp; การส่งต่อ (Approval &amp; Routing)</h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-slate-900 dark:text-white text-xs">2. ผู้อนุมัติ &amp; การส่งต่อ (Approval &amp; Routing)</h4>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                        🔒 ล็อกผู้อนุมัติอัตโนมัติ
+                      </span>
+                    </div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[11px] font-semibold mb-1">ผู้อนุมัติ (Approver Name) *</label>
-                        <SearchableSelect
-                          value={formInput.approverName}
-                          options={personnelList.map(p => ({ value: p.name, label: p.name }))}
-                          onChange={(name) => {
-                            const person = personnelList.find(p => p.name === name);
-                            setFormInput(prev => ({
-                              ...prev,
-                              approverName: name,
-                              approverEmail: person?.email || prev.approverEmail
-                            }));
-                          }}
+                        <label className="block text-[11px] font-semibold mb-1">ผู้อนุมัติ (Approver Name)</label>
+                        <input
+                          type="text"
+                          disabled
+                          readOnly
+                          value="ศรัณย์ภัทธ อุบล"
+                          className="w-full p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-not-allowed select-none"
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-semibold mb-1">Email ผู้อนุมัติ *</label>
+                        <label className="block text-[11px] font-semibold mb-1">Email ผู้อนุมัติ</label>
                         <input
                           type="email"
-                          required
-                          value={formInput.approverEmail}
-                          onChange={(e) => setFormInput({ ...formInput, approverEmail: e.target.value })}
-                          className="w-full p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-semibold"
+                          disabled
+                          readOnly
+                          value="sarunpat.ub@valuesourcing.co"
+                          className="w-full p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold cursor-not-allowed select-none"
                         />
                       </div>
                     </div>
@@ -5945,16 +5930,16 @@
                       </button>
                     )}
 
-                    {/* Approve & Send to Approver */}
+                    {/* Approve & Move to Manpower Request (No Email) */}
                     {(selectedRequisitionDetail.requestStatus || selectedRequisitionDetail.workflowStatus) === "PENDING_ADMIN" && (
                       <button
                         type="button"
                         disabled={isApprovingEmailSending}
-                        onClick={() => handleAdminApproveAndSendToApprover(selectedRequisitionDetail)}
-                        className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-600 to-brand-600 hover:from-sky-700 hover:to-brand-700 shadow-md shadow-brand-500/20 transition active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                        onClick={() => handleAdminApproveAndMoveToManpower(selectedRequisitionDetail)}
+                        className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-md shadow-emerald-500/20 transition active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
                       >
-                        <span>{isApprovingEmailSending ? "⏳ กำลังส่งเมล..." : "อนุมัติคำขอและส่งอีเมล (Approve & Send to Approver)"}</span>
-                        <Icon name="send" className="w-3.5 h-3.5 text-white" />
+                        <span>{isApprovingEmailSending ? "⏳ กำลังบันทึก..." : "✅ ยืนยันรับข้อมูล & เริ่มการสรรหา (READY_FOR_RECRUITMENT)"}</span>
+                        <Icon name="checkCircle" className="w-3.5 h-3.5 text-white" />
                       </button>
                     )}
                   </div>
@@ -6146,7 +6131,7 @@
             </div>
           )}
 
-          {/* Admin Review & Action Modal (Step 2: PENDING_ADMIN -> PENDING_APPROVER) */}
+          {/* Admin Review & Action Modal (Step 2: PENDING_ADMIN -> READY_FOR_RECRUITMENT) */}
           {showAdminReviewModal && selectedAdminReviewSlot && (
             <div className="fixed inset-0 z-[75] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
               <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-[92vh] flex flex-col">
@@ -6156,7 +6141,7 @@
                       STEP 2: ADMIN REVIEW &amp; ACTION
                     </span>
                     <h3 className="text-base font-extrabold mt-0.5">
-                      ตรวจสอบและส่งอีเมลหาผู้อนุมัติ ({selectedAdminReviewSlot.slotId})
+                      ตรวจสอบและเริ่มการสรรหา ({selectedAdminReviewSlot.slotId})
                     </h3>
                   </div>
                   <button onClick={() => setShowAdminReviewModal(false)} className="p-1.5 text-slate-400 hover:text-white">
@@ -6169,17 +6154,15 @@
                     <p><span className="text-slate-400">ตำแหน่งงาน:</span> <strong className="text-slate-900 dark:text-white text-sm">{selectedAdminReviewSlot.jobTitle}</strong></p>
                     <p><span className="text-slate-400">ฝ่ายงาน:</span> <strong className="text-brand-600">{selectedAdminReviewSlot.department}</strong></p>
                     <p><span className="text-slate-400">ผู้ยื่นคำขอ:</span> {selectedAdminReviewSlot.requesterName} ({selectedAdminReviewSlot.requesterEmail})</p>
+                    <p><span className="text-slate-400">ผู้อนุมัติ:</span> ศรัณย์ภัทธ อุบล (sarunpat.ub@valuesourcing.co)</p>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 space-y-1">
-                    <span className="text-[10px] font-bold uppercase text-sky-900 dark:text-sky-300">
-                      อีเมลผู้อนุมัติที่จะได้รับข้อความ:
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-emerald-900 dark:text-emerald-300 flex items-center gap-1">
+                      <span>⚡ การดำเนินการสรรหาทันที (Direct Recruitment Workflow):</span>
                     </span>
-                    <p className="text-xs font-extrabold text-sky-700 dark:text-sky-300">
-                      👤 {selectedAdminReviewSlot.approverName} &bull; {selectedAdminReviewSlot.approverEmail}
-                    </p>
-                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-1">
-                      เมื่อ Admin กดยืนยัน ระบบจะสร้าง Token ปลอดภัย แนบปุ่ม "ยืนยันการสรรหา" และส่งอีเมลอัตโนมัติไปยังที่อยู่นี้ทันที
+                    <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-200 leading-relaxed">
+                      เมื่อแอดมินกดยืนยัน ระบบจะปรับสถานะเป็น <strong>READY_FOR_RECRUITMENT</strong> และย้ายคำขอนี้เข้าสู่ <strong>1. Manpower Request</strong> บน Kanban Pipeline ทันที
                     </p>
                   </div>
                 </div>
@@ -6194,11 +6177,11 @@
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleAdminApproveAndSendToApprover(selectedAdminReviewSlot)}
-                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-600 to-brand-600 hover:from-sky-700 hover:to-brand-700 shadow-md transition active:scale-95 flex items-center gap-1.5"
+                    onClick={() => handleAdminApproveAndMoveToManpower(selectedAdminReviewSlot)}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-md transition active:scale-95 flex items-center gap-1.5"
                   >
-                    <span>ยืนยันคำขอ &amp; ส่งอีเมลหาผู้อนุมัติ (PENDING_APPROVER)</span>
-                    <Icon name="send" className="w-3.5 h-3.5 text-white" />
+                    <span>✅ ยืนยันรับข้อมูล &amp; เริ่มการสรรหา (READY_FOR_RECRUITMENT)</span>
+                    <Icon name="checkCircle" className="w-3.5 h-3.5 text-white" />
                   </button>
                 </div>
               </div>
@@ -6274,10 +6257,10 @@
                     </div>
                   </div>
 
-                  {/* Approval Workflow Progress Tracker for Request Received & Pending States */}
+                  {/* Approval Workflow Progress Tracker */}
                   {(() => {
                     const wf = selectedDetailSlot.workflowStatus || selectedDetailSlot.requestStatus || "PENDING_ADMIN";
-                    const isStep1Done = true; // Submitted
+                    const isStep1Done = true;
                     const isStep2Done = wf === "PENDING_APPROVER" || wf === "PENDING_IT" || wf === "READY_FOR_RECRUITMENT" || wf === "Recruiting" || selectedDetailSlot.stage !== "received";
                     const isStep3Done = wf === "PENDING_IT" || wf === "READY_FOR_RECRUITMENT" || wf === "Recruiting" || selectedDetailSlot.stage !== "received";
                     const isStep4Done = wf === "READY_FOR_RECRUITMENT" || wf === "Recruiting" || (selectedDetailSlot.stage !== "received" && selectedDetailSlot.stage !== "manpower");
@@ -6304,14 +6287,12 @@
 
                         {/* Visual Progress Steps */}
                         <div className="grid grid-cols-4 gap-2 pt-1 text-center">
-                          {/* Step 1: Submit */}
                           <div className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800">
                             <div className="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center mx-auto mb-1">✓</div>
                             <span className="font-bold text-[10px] text-slate-900 dark:text-white block">1. ยื่นคำขอ</span>
                             <span className="text-[9px] text-emerald-600 font-semibold block">{selectedDetailSlot.requestDate}</span>
                           </div>
 
-                          {/* Step 2: Admin Review */}
                           <div className={`p-2 rounded-xl border ${
                             isStep2Done ? "bg-white dark:bg-slate-800 border-emerald-200 dark:border-emerald-800" :
                             wf === "PENDING_ADMIN" ? "bg-amber-50 dark:bg-amber-950/60 border-amber-300 ring-2 ring-amber-500/20" :
@@ -6327,7 +6308,6 @@
                             </span>
                           </div>
 
-                          {/* Step 3: Approver Confirm */}
                           <div className={`p-2 rounded-xl border ${
                             isStep3Done ? "bg-white dark:bg-slate-800 border-emerald-200 dark:border-emerald-800" :
                             wf === "PENDING_APPROVER" ? "bg-orange-50 dark:bg-orange-950/60 border-orange-300 ring-2 ring-orange-500/20" :
@@ -6343,7 +6323,6 @@
                             </span>
                           </div>
 
-                          {/* Step 4: IT Procurement */}
                           <div className={`p-2 rounded-xl border ${
                             isStep4Done ? "bg-white dark:bg-slate-800 border-emerald-200 dark:border-emerald-800" :
                             wf === "PENDING_IT" ? "bg-sky-50 dark:bg-sky-950/60 border-sky-300 ring-2 ring-sky-500/20" :
@@ -6360,11 +6339,10 @@
                           </div>
                         </div>
 
-                        {/* Quick Action Button for Admin if in PENDING_ADMIN */}
                         {wf === "PENDING_ADMIN" && isAdminAuthenticated && (
                           <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
                             <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold">
-                              💡 คุณสามารถตรวจสอบและอนุมัติคำขอนี้เพื่อส่งต่อหาผู้อนุมัติ:
+                              💡 คุณสามารถตรวจสอบและอนุมัติคำขอนี้เพื่อเริ่มการสรรหาทันที:
                             </span>
                             <button
                               type="button"
